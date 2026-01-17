@@ -5,9 +5,9 @@
 
 import cron from 'node-cron'
 import http from 'http'
-import { initNotion, getIdeasNeedingAnalysis, writeAnalysisToNotion } from './notion.js'
+import { initNotion, getIdeasNeedingAnalysis, writeAnalysisToNotion, createIdeaInNotion, archivePage } from './notion.js'
 import { initSanity, getContentContextForClaude } from './sanity.js'
-import { initClaude, analyzeIdea } from './claude.js'
+import { initClaude, analyzeIdea, isHelpRequest, extractHelpTopic, brainstormIdeas } from './claude.js'
 
 // Configuration from environment
 const config = {
@@ -29,6 +29,7 @@ const config = {
 // Stats tracking
 const stats = {
   totalAnalyzed: 0,
+  totalBrainstormed: 0,
   lastRun: null,
   errors: 0,
   isRunning: false
@@ -51,6 +52,45 @@ function validateConfig() {
     missing.forEach(([name]) => console.error(`   - ${name}`))
     process.exit(1)
   }
+}
+
+/**
+ * Process a help request - brainstorm high-viral ideas
+ */
+async function processHelpRequest(idea, existingContent) {
+  const topic = extractHelpTopic(idea)
+  console.log(`\n🆘 Help request detected: "${topic}"`)
+  console.log(`   Brainstorming 5 high-viral ideas...`)
+
+  const ideas = await brainstormIdeas(topic, existingContent)
+  
+  if (ideas.length === 0) {
+    console.log('   ❌ No ideas generated')
+    return { created: 0, archived: false }
+  }
+
+  console.log(`   ✅ Generated ${ideas.length} ideas`)
+  
+  // Create each idea in Notion
+  let created = 0
+  for (const newIdea of ideas) {
+    console.log(`   📝 Creating: "🤖 ${newIdea.title}" (Score: ${newIdea.viralityScore})`)
+    const pageId = await createIdeaInNotion(newIdea)
+    if (pageId) {
+      created++
+    }
+  }
+
+  // Archive the original help request
+  console.log(`   🗑️  Archiving help request...`)
+  const archived = await archivePage(idea.id)
+  
+  if (archived) {
+    console.log(`   ✅ Help request archived`)
+  }
+
+  stats.totalBrainstormed += created
+  return { created, archived }
 }
 
 /**
@@ -91,54 +131,48 @@ async function processNewIdeas() {
 
     // Process each idea
     for (const idea of ideas) {
-      console.log(`\n💭 Analyzing: "${idea.title}"`)
-      console.log(`   Platform: ${Array.isArray(idea.platform) ? idea.platform.join(', ') : 'Not set'}`)
-      console.log(`   Status: ${Array.isArray(idea.status) ? idea.status.join(', ') : 'Not set'}`)
-
       try {
-        // Analyze with Claude
-        console.log('   🤖 Running AI analysis...')
-        const analysis = await analyzeIdea(idea, existingContent)
-
-        if (!analysis) {
-          console.log('   ❌ Analysis failed')
-          errors++
+        // Check if this is a help request
+        if (isHelpRequest(idea)) {
+          await processHelpRequest(idea, existingContent)
           continue
         }
 
-        console.log(`   ✅ Virality Score: ${analysis.viralityScore}/100`)
-        console.log(`   📱 Best Format: ${analysis.bestFormat}`)
-        if (analysis.additionalFormats && analysis.additionalFormats.length > 0) {
-          console.log(`   📱 Also works for: ${analysis.additionalFormats.join(', ')}`)
-        }
+        // Normal analysis mode
+        console.log(`\n💭 Analyzing: "${idea.title}"`)
+        console.log(`   Platform: ${Array.isArray(idea.platform) ? idea.platform.join(', ') : 'Not set'}`)
+        console.log(`   Status: ${idea.status || 'Not set'}`)
 
-        // Write back to Notion
-        console.log('   📝 Writing to Notion...')
-        const success = await writeAnalysisToNotion(idea.id, analysis)
+        console.log('   🤖 Running AI analysis...')
+        const analysis = await analyzeIdea(idea, existingContent)
 
-        if (success) {
-          console.log('   ✅ Analysis saved to Notion')
-          analyzed++
+        if (analysis) {
+          console.log(`   ✅ Virality Score: ${analysis.viralityScore}/100`)
+          console.log(`   📱 Best Format: ${analysis.bestFormat}`)
+          if (analysis.additionalFormats.length > 0) {
+            console.log(`   📱 Also works for: ${analysis.additionalFormats.join(', ')}`)
+          }
+
+          console.log('   📝 Writing to Notion...')
+          const success = await writeAnalysisToNotion(idea.id, analysis)
+          
+          if (success) {
+            console.log('   ✅ Analysis saved to Notion')
+            analyzed++
+            stats.totalAnalyzed++
+          } else {
+            console.log('   ❌ Failed to save analysis')
+            errors++
+          }
         } else {
-          console.log('   ⚠️  Failed to save to Notion')
+          console.log('   ❌ Analysis failed')
           errors++
         }
-
-        // Small delay to avoid rate limits
-        if (ideas.length > 1) {
-          await new Promise(resolve => setTimeout(resolve, 1000))
-        }
-
-      } catch (error) {
-        console.error(`   ❌ Error: ${error.message}`)
+      } catch (ideaError) {
+        console.error(`   ❌ Error processing idea: ${ideaError.message}`)
         errors++
       }
     }
-
-    // Update stats
-    stats.totalAnalyzed += analyzed
-    stats.errors += errors
-    stats.lastRun = new Date()
 
     console.log(`\n✨ Analysis complete!`)
     console.log(`   Ideas analyzed: ${analyzed}`)
@@ -151,6 +185,7 @@ async function processNewIdeas() {
     errors++
   }
 
+  stats.lastRun = new Date()
   stats.isRunning = false
   return { analyzed, errors }
 }
@@ -170,6 +205,7 @@ function createServer() {
         service: 'kyndall-idea-engine',
         isRunning: stats.isRunning,
         totalAnalyzed: stats.totalAnalyzed,
+        totalBrainstormed: stats.totalBrainstormed,
         lastRun: stats.lastRun,
         errors: stats.errors
       }))
@@ -229,6 +265,7 @@ async function main() {
   console.log('💡 Monitors Notion for new content ideas')
   console.log('🤖 Enriches ideas with AI-powered insights')
   console.log('📊 Virality scores, hooks, and strategic advice')
+  console.log('🆘 "help [topic]" - Brainstorms 5 high-viral ideas')
   console.log('')
 
   validateConfig()
@@ -253,6 +290,7 @@ async function main() {
 
   console.log('\n🎯 Idea Engine running.')
   console.log('   New Notion ideas → AI analysis → Enriched back to Notion')
+  console.log('   "help [topic]" → 5 high-viral AI ideas → New Notion pages')
 }
 
 main().catch(error => {
