@@ -120,11 +120,6 @@ Create a database in Notion with these properties:
 ### 6. Set Environment Variables
 
 ```
-NOTION_API_KEY=secret_xxxxx
-NOTION_IDEAS_DATABASE_ID=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-ANTHROPIC_API_KEY=sk-ant-xxxxx
-SANITY_PROJECT_ID=f9drkp1w
-SANITY_DATASET=production
 CHECK_INTERVAL_MINUTES=15
 ```
 
