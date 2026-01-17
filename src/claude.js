@@ -54,10 +54,8 @@ function buildAnalysisPrompt(idea, existingContent) {
     ? idea.platform.join(', ') 
     : 'Not specified'
   
-  // Format status array for display
-  const statusStr = Array.isArray(idea.status) && idea.status.length > 0
-    ? idea.status.join(', ')
-    : 'Not set'
+  // Format status for display (now a single select, not array)
+  const statusStr = idea.status || 'Not set'
 
   return `You are an elite viral content strategist who has helped creators go from 0 to millions of followers. You understand the psychology of what makes people stop scrolling, watch till the end, and share with friends.
 
@@ -102,6 +100,8 @@ ${recentTopics?.slice(0, 8).map(t => `• ${t}`).join('\n') || '(building conten
 
 Think like a viral content expert. Be specific. Be strategic. Give her content that will PERFORM.
 
+IMPORTANT: Respond with ONLY the content for each section. Do NOT include the section labels in your answers. Just provide the raw content that goes after each label.
+
 Respond in EXACTLY this format:
 
 VIRALITY_SCORE: [1-100]
@@ -113,13 +113,13 @@ AI_REVIEW:
 [Strategic advice to make this CRUSH. Specific tweaks, angles, or approaches. What would make this go from good to viral? 2-3 sentences of actionable advice.]
 
 HOOK_1:
-[CURIOSITY HOOK - Create an information gap they NEED to close. Make them think "wait what?" Should stop the scroll in under 2 seconds. Under 12 words.]
+[CURIOSITY HOOK - Create an information gap they NEED to close. Make them think "wait what?" Should stop the scroll in under 2 seconds. Under 12 words. Just the hook text, nothing else.]
 
 HOOK_2:
-[RELATABLE HOOK - Start with "POV:" or describe a universal experience. Make them feel SEEN. Something they'll comment "this is so me" on. Under 12 words.]
+[RELATABLE HOOK - Start with "POV:" or describe a universal experience. Make them feel SEEN. Something they'll comment "this is so me" on. Under 12 words. Just the hook text, nothing else.]
 
 HOOK_3:
-[SPICY HOOK - Controversial, bold, or unexpected take. Something that makes people want to argue OR aggressively agree. Under 12 words.]
+[SPICY HOOK - Controversial, bold, or unexpected take. Something that makes people want to argue OR aggressively agree. Under 12 words. Just the hook text, nothing else.]
 
 DESCRIPTION:
 [Write the actual caption/description she should post. Include:
@@ -186,6 +186,24 @@ function parseAnalysisResponse(text) {
     postingTime: ''
   }
 
+  // All possible section headers for boundary detection
+  const sectionHeaders = [
+    'VIRALITY_SCORE',
+    'SCORE_BREAKDOWN',
+    'AI_REVIEW',
+    'HOOK_1',
+    'HOOK_2',
+    'HOOK_3',
+    'DESCRIPTION',
+    'HASHTAGS',
+    'BEST_FORMAT',
+    'ADDITIONAL_FORMATS',
+    'SIMILAR_CONTENT',
+    'CONTENT_GAP',
+    'TRENDING_RELEVANCE',
+    'POSTING_TIME'
+  ]
+
   try {
     // Extract virality score
     const scoreMatch = text.match(/VIRALITY_SCORE:\s*(\d+)/i)
@@ -194,13 +212,13 @@ function parseAnalysisResponse(text) {
     }
 
     // Extract each section
-    analysis.scoreBreakdown = extractSection(text, 'SCORE_BREAKDOWN')
-    analysis.aiReview = extractSection(text, 'AI_REVIEW')
-    analysis.hook1 = extractSection(text, 'HOOK_1')
-    analysis.hook2 = extractSection(text, 'HOOK_2')
-    analysis.hook3 = extractSection(text, 'HOOK_3')
-    analysis.description = extractSection(text, 'DESCRIPTION')
-    analysis.hashtags = extractSection(text, 'HASHTAGS')
+    analysis.scoreBreakdown = extractSection(text, 'SCORE_BREAKDOWN', sectionHeaders)
+    analysis.aiReview = extractSection(text, 'AI_REVIEW', sectionHeaders)
+    analysis.hook1 = extractSection(text, 'HOOK_1', sectionHeaders)
+    analysis.hook2 = extractSection(text, 'HOOK_2', sectionHeaders)
+    analysis.hook3 = extractSection(text, 'HOOK_3', sectionHeaders)
+    analysis.description = extractSection(text, 'DESCRIPTION', sectionHeaders)
+    analysis.hashtags = extractSection(text, 'HASHTAGS', sectionHeaders)
     
     // Extract best format
     const formatMatch = text.match(/BEST_FORMAT:\s*(.+?)(?:\n|$)/i)
@@ -221,10 +239,10 @@ function parseAnalysisResponse(text) {
       }
     }
 
-    analysis.similarContent = extractSection(text, 'SIMILAR_CONTENT')
-    analysis.contentGap = extractSection(text, 'CONTENT_GAP')
-    analysis.trendingRelevance = extractSection(text, 'TRENDING_RELEVANCE')
-    analysis.postingTime = extractSection(text, 'POSTING_TIME')
+    analysis.similarContent = extractSection(text, 'SIMILAR_CONTENT', sectionHeaders)
+    analysis.contentGap = extractSection(text, 'CONTENT_GAP', sectionHeaders)
+    analysis.trendingRelevance = extractSection(text, 'TRENDING_RELEVANCE', sectionHeaders)
+    analysis.postingTime = extractSection(text, 'POSTING_TIME', sectionHeaders)
 
   } catch (error) {
     console.error('Error parsing Claude response:', error.message)
@@ -263,11 +281,25 @@ function normalizeFormat(format) {
 /**
  * Extract a section from the response text
  */
-function extractSection(text, sectionName) {
-  const regex = new RegExp(`${sectionName}:\\s*\\n?([\\s\\S]*?)(?=\\n[A-Z_]+:|$)`, 'i')
+function extractSection(text, sectionName, allSections) {
+  // Build regex pattern that stops at any other section header
+  const otherSections = allSections.filter(s => s !== sectionName).join('|')
+  const regex = new RegExp(`${sectionName}:\\s*\\n?([\\s\\S]*?)(?=\\n(?:${otherSections}):|$)`, 'i')
+  
   const match = text.match(regex)
   if (match) {
-    return match[1].trim()
+    let content = match[1].trim()
+    
+    // Clean up any stray section labels that might have bled through
+    // This catches cases where the regex didn't stop cleanly
+    const cleanupRegex = new RegExp(`\\n?(${allSections.join('|')}):[\\s\\S]*$`, 'i')
+    content = content.replace(cleanupRegex, '')
+    
+    // Remove common prefixes that Claude might add to hooks
+    // e.g., "CURIOSITY HOOK - " or "[RELATABLE HOOK]"
+    content = content.replace(/^\[?(?:CURIOSITY|RELATABLE|SPICY|BOLD)?\s*HOOK\s*[-:\]]\s*/i, '')
+    
+    return content.trim()
   }
   return ''
 }
