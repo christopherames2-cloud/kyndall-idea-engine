@@ -191,7 +191,7 @@ function parseAnalysisResponse(text) {
       analysis.viralityScore = Math.min(100, Math.max(1, parseInt(scoreMatch[1])))
     }
 
-    // Extract each section using original working function
+    // Extract each section
     analysis.scoreBreakdown = extractSection(text, 'SCORE_BREAKDOWN')
     analysis.aiReview = extractSection(text, 'AI_REVIEW')
     analysis.hook1 = cleanHookText(extractSection(text, 'HOOK_1'))
@@ -259,10 +259,12 @@ function normalizeFormat(format) {
 }
 
 /**
- * Extract a section from the response text (original working version)
+ * Extract a section from the response text
+ * Fixed regex to include digits (for HOOK_1, HOOK_2, HOOK_3)
  */
 function extractSection(text, sectionName) {
-  const regex = new RegExp(`${sectionName}:\\s*\\n?([\\s\\S]*?)(?=\\n[A-Z_]+:|$)`, 'i')
+  // [A-Z_0-9]+ now includes digits to match HOOK_1, HOOK_2, etc.
+  const regex = new RegExp(`${sectionName}:\\s*\\n?([\\s\\S]*?)(?=\\n[A-Z_0-9]+:|$)`, 'i')
   const match = text.match(regex)
   if (match) {
     return match[1].trim()
