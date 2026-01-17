@@ -52,7 +52,7 @@ export async function getIdeasNeedingAnalysis() {
           },
           {
             property: 'Status',
-            select: {
+            status: {
               does_not_equal: 'Posted'
             }
           }
