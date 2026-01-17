@@ -14,7 +14,242 @@ export function initClaude(apiKey) {
 }
 
 /**
- * Analyze a content idea and generate enrichments
+ * Check if an idea is a "help" request
+ */
+export function isHelpRequest(idea) {
+  return idea.title.toLowerCase().trim().startsWith('help ')
+}
+
+/**
+ * Extract the topic from a help request
+ */
+export function extractHelpTopic(idea) {
+  return idea.title.replace(/^help\s+/i, '').trim()
+}
+
+/**
+ * Brainstorm high-viral ideas for a topic (help mode)
+ * Returns array of 5 fully-analyzed ideas
+ */
+export async function brainstormIdeas(topic, existingContent) {
+  if (!anthropic) {
+    throw new Error('Claude not initialized')
+  }
+
+  const prompt = buildBrainstormPrompt(topic, existingContent)
+
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 8000,
+      messages: [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ]
+    })
+
+    const text = response.content[0].text
+    return parseBrainstormResponse(text)
+  } catch (error) {
+    console.error('Error calling Claude for brainstorm:', error.message)
+    return []
+  }
+}
+
+/**
+ * Build the brainstorm prompt
+ */
+function buildBrainstormPrompt(topic, existingContent) {
+  const { stats, recentTopics } = existingContent
+
+  return `You are an elite viral content strategist who has helped creators go from 0 to millions of followers. You ONLY suggest ideas that have genuine viral potential.
+
+You're brainstorming content ideas for Kyndall Ames (@kyndallames), a beauty and lifestyle creator known for her warm, authentic, best-friend energy.
+
+## KYNDALL'S BRAND VOICE
+- Warm, approachable, like texting your best friend
+- Authentic - she shares what she actually uses
+- Enthusiastic but not fake - genuine excitement
+- Uses phrases like: "okay but...", "hear me out", "I'm obsessed", "game changer"
+
+## HER EXISTING CONTENT
+Total posts: ${stats?.totalPosts || 0} | Articles: ${stats?.totalArticles || 0}
+Recent content:
+${recentTopics?.slice(0, 8).map(t => `• ${t}`).join('\n') || '(building content library)'}
+
+---
+
+## THE TOPIC TO BRAINSTORM
+
+**Topic:** ${topic}
+
+---
+
+## YOUR TASK
+
+Generate exactly 5 HIGH-VIRAL-POTENTIAL content ideas based on this topic. 
+
+CRITICAL RULES:
+- Every idea MUST be worthy of a 75+ virality score
+- No generic or overdone ideas - be SPECIFIC and CREATIVE
+- Each idea should have a unique angle or hook
+- Think about what's trending NOW and what creates engagement
+- Consider controversy, relatability, curiosity gaps, and shareability
+
+For EACH of the 5 ideas, provide a COMPLETE analysis in this EXACT format:
+
+---IDEA_1---
+TITLE: [Specific, compelling title - not generic]
+VIRALITY_SCORE: [75-100 only]
+SCORE_BREAKDOWN:
+[Why this will go viral - 2-3 sentences]
+AI_REVIEW:
+[Strategic advice - 2-3 sentences]
+HOOK_1:
+[Curiosity hook - under 12 words]
+HOOK_2:
+[Relatable/POV hook - under 12 words]
+HOOK_3:
+[Spicy/bold hook - under 12 words]
+DESCRIPTION:
+[Full caption/description in her voice - 150-300 characters]
+HASHTAGS:
+[10-15 relevant hashtags]
+BEST_FORMAT: [TikTok | YouTube Short | YouTube Long | Instagram Reel | Instagram Story | Instagram Carousel | Blog Post]
+ADDITIONAL_FORMATS: [Other formats or "None"]
+SIMILAR_CONTENT:
+[How this differs from her existing content]
+CONTENT_GAP:
+[What makes this unique]
+TRENDING_RELEVANCE:
+[Current trends to leverage]
+POSTING_TIME:
+[Best day/time to post]
+---END_IDEA_1---
+
+---IDEA_2---
+[Same format...]
+---END_IDEA_2---
+
+---IDEA_3---
+[Same format...]
+---END_IDEA_3---
+
+---IDEA_4---
+[Same format...]
+---END_IDEA_4---
+
+---IDEA_5---
+[Same format...]
+---END_IDEA_5---
+
+Remember: ONLY suggest ideas that would genuinely score 75+. Quality over quantity. Be her secret weapon.`
+}
+
+/**
+ * Parse brainstorm response into array of ideas
+ */
+function parseBrainstormResponse(text) {
+  const ideas = []
+  
+  // Extract each idea block
+  for (let i = 1; i <= 5; i++) {
+    const startMarker = `---IDEA_${i}---`
+    const endMarker = `---END_IDEA_${i}---`
+    
+    const startIdx = text.indexOf(startMarker)
+    const endIdx = text.indexOf(endMarker)
+    
+    if (startIdx !== -1 && endIdx !== -1) {
+      const ideaBlock = text.substring(startIdx + startMarker.length, endIdx).trim()
+      const parsedIdea = parseIdeaBlock(ideaBlock)
+      if (parsedIdea && parsedIdea.title) {
+        ideas.push(parsedIdea)
+      }
+    }
+  }
+  
+  return ideas
+}
+
+/**
+ * Parse a single idea block
+ */
+function parseIdeaBlock(block) {
+  const idea = {
+    title: '',
+    viralityScore: 75,
+    scoreBreakdown: '',
+    aiReview: '',
+    hook1: '',
+    hook2: '',
+    hook3: '',
+    description: '',
+    hashtags: '',
+    bestFormat: 'TikTok',
+    additionalFormats: [],
+    similarContent: '',
+    contentGap: '',
+    trendingRelevance: '',
+    postingTime: ''
+  }
+
+  try {
+    // Extract title
+    const titleMatch = block.match(/TITLE:\s*(.+?)(?:\n|$)/i)
+    if (titleMatch) {
+      idea.title = titleMatch[1].trim()
+    }
+
+    // Extract virality score
+    const scoreMatch = block.match(/VIRALITY_SCORE:\s*(\d+)/i)
+    if (scoreMatch) {
+      idea.viralityScore = Math.min(100, Math.max(75, parseInt(scoreMatch[1])))
+    }
+
+    // Extract sections
+    idea.scoreBreakdown = extractSection(block, 'SCORE_BREAKDOWN')
+    idea.aiReview = extractSection(block, 'AI_REVIEW')
+    idea.hook1 = cleanHookText(extractSection(block, 'HOOK_1'))
+    idea.hook2 = cleanHookText(extractSection(block, 'HOOK_2'))
+    idea.hook3 = cleanHookText(extractSection(block, 'HOOK_3'))
+    idea.description = extractSection(block, 'DESCRIPTION')
+    idea.hashtags = extractSection(block, 'HASHTAGS')
+    
+    // Extract best format
+    const formatMatch = block.match(/BEST_FORMAT:\s*(.+?)(?:\n|$)/i)
+    if (formatMatch) {
+      idea.bestFormat = normalizeFormat(formatMatch[1].trim())
+    }
+
+    // Extract additional formats
+    const additionalMatch = block.match(/ADDITIONAL_FORMATS:\s*(.+?)(?:\n|$)/i)
+    if (additionalMatch) {
+      const formatsStr = additionalMatch[1].trim()
+      if (formatsStr.toLowerCase() !== 'none') {
+        idea.additionalFormats = formatsStr
+          .split(',')
+          .map(f => normalizeFormat(f.trim()))
+          .filter(f => f && f !== idea.bestFormat)
+      }
+    }
+
+    idea.similarContent = extractSection(block, 'SIMILAR_CONTENT')
+    idea.contentGap = extractSection(block, 'CONTENT_GAP')
+    idea.trendingRelevance = extractSection(block, 'TRENDING_RELEVANCE')
+    idea.postingTime = extractSection(block, 'POSTING_TIME')
+
+  } catch (error) {
+    console.error('Error parsing idea block:', error.message)
+  }
+
+  return idea
+}
+
+/**
+ * Analyze a content idea and generate enrichments (normal mode)
  */
 export async function analyzeIdea(idea, existingContent) {
   if (!anthropic) {
