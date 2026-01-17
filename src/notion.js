@@ -48,7 +48,7 @@ export async function getIdeasNeedingAnalysis() {
       },
       sorts: [
         {
-          property: 'Created',
+          timestamp: 'created_time',
           direction: 'descending'
         }
       ]
@@ -74,7 +74,7 @@ export async function getAllIdeas() {
     database_id: databaseId,
     sorts: [
       {
-        property: 'Created',
+        timestamp: 'created_time',
         direction: 'descending'
       }
     ]
@@ -92,9 +92,9 @@ function parseNotionPage(page) {
   return {
     id: page.id,
     title: getTitle(props.Name || props.Idea || props.Title),
-    platform: getSelect(props.Platform),
-    status: getSelect(props.Status),
-    paidGifted: getSelect(props['Paid/Gifted']),
+    platform: getMultiSelect(props.Platform),        // Multi-select: YouTube, TikTok, Instagram, UGC, Shorts
+    status: getMultiSelect(props.Status),            // Multi-select: YouTube Idea, Film, Posted, etc.
+    paidGifted: getMultiSelect(props['Paid/Gifted']), // Multi-select: Paid, Gifted
     dueDate: getDate(props['Due Date']),
     viralityScore: getNumber(props['Virality Score']),
     lastAnalyzed: getDate(props['Last Analyzed']),
@@ -207,6 +207,11 @@ function getRichText(prop) {
 function getSelect(prop) {
   if (!prop || prop.type !== 'select' || !prop.select) return null
   return prop.select.name
+}
+
+function getMultiSelect(prop) {
+  if (!prop || prop.type !== 'multi_select') return []
+  return prop.multi_select.map(item => item.name)
 }
 
 function getNumber(prop) {
