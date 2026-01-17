@@ -49,6 +49,16 @@ export async function analyzeIdea(idea, existingContent) {
 function buildAnalysisPrompt(idea, existingContent) {
   const { stats, postsByCategory, recentTopics } = existingContent
 
+  // Format platform array for display
+  const platformStr = Array.isArray(idea.platform) && idea.platform.length > 0 
+    ? idea.platform.join(', ') 
+    : 'Not specified'
+  
+  // Format status array for display
+  const statusStr = Array.isArray(idea.status) && idea.status.length > 0
+    ? idea.status.join(', ')
+    : 'Not set'
+
   return `You are a social media content strategist for Kyndall Ames, a beauty and lifestyle content creator. Analyze this content idea and provide insights.
 
 ## KYNDALL'S EXISTING CONTENT
@@ -67,8 +77,8 @@ ${recentTopics?.map(t => `- ${t}`).join('\n') || '(none yet)'}
 
 ## THE IDEA TO ANALYZE
 Title: ${idea.title}
-Platform: ${idea.platform || 'Not specified'}
-Status: ${idea.status || 'Not set'}
+Platform(s): ${platformStr}
+Status: ${statusStr}
 
 ## YOUR TASK
 Analyze this idea and respond in EXACTLY this format (keep each section concise):
