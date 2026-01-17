@@ -52,8 +52,8 @@ export async function getIdeasNeedingAnalysis() {
           },
           {
             property: 'Status',
-              select: {
-              does_not_contain: 'Posted'
+            select: {
+              does_not_equal: 'Posted'
             }
           }
         ]
