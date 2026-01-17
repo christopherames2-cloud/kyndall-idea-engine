@@ -52,7 +52,7 @@ export async function getIdeasNeedingAnalysis() {
           },
           {
             property: 'Status',
-            multi_select: {
+              select: {
               does_not_contain: 'Posted'
             }
           }
@@ -105,7 +105,7 @@ function parseNotionPage(page) {
     id: page.id,
     title: getTitle(props.Name || props.Idea || props.Title),
     platform: getMultiSelect(props.Platform),        // Multi-select: YouTube, TikTok, Instagram, UGC, Shorts
-    status: getMultiSelect(props.Status),            // Multi-select: YouTube Idea, Film, Posted, etc.
+    status: getSelect(props.Status),            // Single-select: YouTube Idea, Film, Posted, etc.
     paidGifted: getMultiSelect(props['Paid/Gifted']), // Multi-select: Paid, Gifted
     dueDate: getDate(props['Due Date']),
     viralityScore: getNumber(props['Virality Score']),
