@@ -105,7 +105,7 @@ function parseNotionPage(page) {
     id: page.id,
     title: getTitle(props.Name || props.Idea || props.Title),
     platform: getMultiSelect(props.Platform),        // Multi-select: YouTube, TikTok, Instagram, UGC, Shorts
-    status: getSelect(props.Status),            // Single-select: YouTube Idea, Film, Posted, etc.
+    status: getStatus(props.Status),                 // Status type property
     paidGifted: getMultiSelect(props['Paid/Gifted']), // Multi-select: Paid, Gifted
     dueDate: getDate(props['Due Date']),
     viralityScore: getNumber(props['Virality Score']),
@@ -214,6 +214,108 @@ export async function writeAnalysisToNotion(pageId, analysis) {
   }
 }
 
+/**
+ * Create a new idea page in Notion (for help mode)
+ * Title will be prefixed with 🤖 emoji
+ */
+export async function createIdeaInNotion(idea) {
+  if (!notion || !databaseId) {
+    throw new Error('Notion not initialized')
+  }
+
+  try {
+    // Build the properties object
+    const properties = {
+      'Name': {
+        title: [{ text: { content: `🤖 ${idea.title}` } }]
+      },
+      'Virality Score': {
+        number: idea.viralityScore
+      },
+      'Score Breakdown': {
+        rich_text: [{ text: { content: truncate(idea.scoreBreakdown, 2000) } }]
+      },
+      'AI Review': {
+        rich_text: [{ text: { content: truncate(idea.aiReview, 2000) } }]
+      },
+      'Hook 1': {
+        rich_text: [{ text: { content: truncate(idea.hook1, 500) } }]
+      },
+      'Hook 2': {
+        rich_text: [{ text: { content: truncate(idea.hook2, 500) } }]
+      },
+      'Hook 3': {
+        rich_text: [{ text: { content: truncate(idea.hook3, 500) } }]
+      },
+      'Description': {
+        rich_text: [{ text: { content: truncate(idea.description, 2000) } }]
+      },
+      'Hashtags': {
+        rich_text: [{ text: { content: truncate(idea.hashtags, 2000) } }]
+      },
+      'Best Format': {
+        select: { name: idea.bestFormat }
+      },
+      'Similar Content': {
+        rich_text: [{ text: { content: truncate(idea.similarContent, 1000) } }]
+      },
+      'Content Gap': {
+        rich_text: [{ text: { content: truncate(idea.contentGap, 1000) } }]
+      },
+      'Trending Relevance': {
+        rich_text: [{ text: { content: truncate(idea.trendingRelevance, 500) } }]
+      },
+      'Posting Time': {
+        rich_text: [{ text: { content: truncate(idea.postingTime, 500) } }]
+      },
+      'Last Analyzed': {
+        date: { start: new Date().toISOString() }
+      },
+      'Needs Reanalysis': {
+        checkbox: false
+      }
+    }
+
+    // Add Additional Formats if provided (multi-select)
+    if (idea.additionalFormats && idea.additionalFormats.length > 0) {
+      properties['Additional Formats'] = {
+        multi_select: idea.additionalFormats.map(format => ({ name: format }))
+      }
+    }
+
+    // Create the page
+    const response = await notion.pages.create({
+      parent: { database_id: databaseId },
+      properties
+    })
+
+    return response.id
+  } catch (error) {
+    console.error('Error creating idea in Notion:', error.message)
+    return null
+  }
+}
+
+/**
+ * Archive (trash) a page in Notion
+ */
+export async function archivePage(pageId) {
+  if (!notion) {
+    throw new Error('Notion not initialized')
+  }
+
+  try {
+    await notion.pages.update({
+      page_id: pageId,
+      archived: true
+    })
+    return true
+  } catch (error) {
+    console.error('Error archiving page:', error.message)
+    return false
+  }
+}
+
 // ============ Helper functions to extract Notion property values ============
 
 function getTitle(prop) {
@@ -229,6 +331,11 @@ function getRichText(prop) {
 function getSelect(prop) {
   if (!prop || prop.type !== 'select' || !prop.select) return null
   return prop.select.name
+}
+
+function getStatus(prop) {
+  if (!prop || prop.type !== 'status' || !prop.status) return null
+  return prop.status.name
 }
 
 function getMultiSelect(prop) {
