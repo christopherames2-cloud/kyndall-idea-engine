@@ -22,7 +22,7 @@ const config = {
     projectId: process.env.SANITY_PROJECT_ID || 'f9drkp1w',
     dataset: process.env.SANITY_DATASET || 'production'
   },
-  checkInterval: parseInt(process.env.CHECK_INTERVAL_MINUTES) || 15,
+  checkInterval: parseInt(process.env.CHECK_INTERVAL_MINUTES) || 5,
   port: parseInt(process.env.PORT) || 8080
 }
 
