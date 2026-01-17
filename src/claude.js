@@ -26,7 +26,7 @@ export async function analyzeIdea(idea, existingContent) {
   try {
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
-      max_tokens: 2000,
+      max_tokens: 3000,
       messages: [
         {
           role: 'user',
@@ -59,84 +59,110 @@ function buildAnalysisPrompt(idea, existingContent) {
     ? idea.status.join(', ')
     : 'Not set'
 
-  return `You are a social media content strategist for Kyndall Ames, a beauty and lifestyle content creator. Analyze this content idea and provide insights.
+  return `You are an elite viral content strategist who has helped creators go from 0 to millions of followers. You understand the psychology of what makes people stop scrolling, watch till the end, and share with friends.
 
-## KYNDALL'S EXISTING CONTENT
-Total posts: ${stats?.totalPosts || 0}
-Total articles: ${stats?.totalArticles || 0}
+You're analyzing content ideas for Kyndall Ames (@kyndallames), a beauty and lifestyle creator known for her warm, authentic, best-friend energy. Her audience trusts her like a friend who always has the best recommendations.
 
-Content by category:
-- Makeup: ${stats?.categories?.makeup || 0} posts
-- Skincare: ${stats?.categories?.skincare || 0} posts  
-- Fashion: ${stats?.categories?.fashion || 0} posts
-- Lifestyle: ${stats?.categories?.lifestyle || 0} posts
-- Travel: ${stats?.categories?.travel || 0} posts
+## WHAT MAKES CONTENT GO VIRAL
+- Pattern interrupt in the first 0.5 seconds
+- Curiosity gap that MUST be closed
+- Emotional resonance (relatability, aspiration, controversy)
+- Watch time retention through storytelling
+- Share trigger ("tag someone who needs this")
+- Comment bait (asking for opinions, hot takes)
+- Save trigger (valuable info they'll want later)
 
-Recent topics she's covered:
-${recentTopics?.map(t => `- ${t}`).join('\n') || '(none yet)'}
+## KYNDALL'S BRAND VOICE
+- Warm, approachable, like texting your best friend
+- Authentic - she shares what she actually uses
+- Enthusiastic but not fake - genuine excitement
+- Slightly self-deprecating humor
+- Direct - gets to the point fast
+- Uses phrases like: "okay but...", "hear me out", "I'm obsessed", "game changer", "no because...", "the way this..."
+
+## HER EXISTING CONTENT
+Total posts: ${stats?.totalPosts || 0} | Articles: ${stats?.totalArticles || 0}
+
+Categories: Makeup (${stats?.categories?.makeup || 0}) | Skincare (${stats?.categories?.skincare || 0}) | Fashion (${stats?.categories?.fashion || 0}) | Lifestyle (${stats?.categories?.lifestyle || 0}) | Travel (${stats?.categories?.travel || 0})
+
+Recent content:
+${recentTopics?.slice(0, 8).map(t => `• ${t}`).join('\n') || '(building content library)'}
+
+---
 
 ## THE IDEA TO ANALYZE
-Title: ${idea.title}
-Platform(s): ${platformStr}
-Status: ${statusStr}
 
-## YOUR TASK
-Analyze this idea and respond in EXACTLY this format (keep each section concise):
+**Title:** ${idea.title}
+**Platform(s):** ${platformStr}
+**Current Status:** ${statusStr}
 
-VIRALITY_SCORE: [number 1-100]
+---
+
+## YOUR ANALYSIS
+
+Think like a viral content expert. Be specific. Be strategic. Give her content that will PERFORM.
+
+Respond in EXACTLY this format:
+
+VIRALITY_SCORE: [1-100]
 
 SCORE_BREAKDOWN:
-[2-3 sentences explaining the score - consider trend potential, hook strength, shareability, her niche fit, and competition]
+[Why this score? Be brutally honest. What's the viral potential? What's working? What's missing? 2-3 sentences max.]
 
 AI_REVIEW:
-[2-3 sentences of strategic advice - what would make this perform well, any concerns, timing considerations]
+[Strategic advice to make this CRUSH. Specific tweaks, angles, or approaches. What would make this go from good to viral? 2-3 sentences of actionable advice.]
 
 HOOK_1:
-[A curiosity-driven hook that creates intrigue - 1-2 sentences max]
+[CURIOSITY HOOK - Create an information gap they NEED to close. Make them think "wait what?" Should stop the scroll in under 2 seconds. Under 12 words.]
 
 HOOK_2:
-[A relatable/POV hook that viewers identify with - 1-2 sentences max]
+[RELATABLE HOOK - Start with "POV:" or describe a universal experience. Make them feel SEEN. Something they'll comment "this is so me" on. Under 12 words.]
 
 HOOK_3:
-[A bold/contrarian hook that stands out - 1-2 sentences max]
+[SPICY HOOK - Controversial, bold, or unexpected take. Something that makes people want to argue OR aggressively agree. Under 12 words.]
 
-BEST_FORMAT: [Choose ONE primary format: TikTok | YouTube Short | YouTube Long | Instagram Reel | Instagram Story | Instagram Carousel | Blog Post]
+DESCRIPTION:
+[Write the actual caption/description she should post. Include:
+- Engaging opening line
+- Brief context or story (2-3 sentences)
+- Call to action (save, share, comment, follow)
+- Keep it conversational in her voice
+- 150-300 characters for TikTok/Reels, can be longer for YouTube]
 
-ADDITIONAL_FORMATS: [List other formats this would work well for, comma-separated, or "None" if only one format fits]
+HASHTAGS:
+[10-15 relevant hashtags. Mix of:
+- High volume (1M+ posts): 3-4 tags
+- Medium volume (100K-1M): 5-6 tags  
+- Niche/specific (under 100K): 3-4 tags
+- Trending if relevant: 1-2 tags
+Format as: #hashtag #hashtag #hashtag]
+
+BEST_FORMAT: [ONE of: TikTok | YouTube Short | YouTube Long | Instagram Reel | Instagram Story | Instagram Carousel | Blog Post]
+
+ADDITIONAL_FORMATS: [Other formats this works for, comma-separated, or "None"]
 
 SIMILAR_CONTENT:
-[If she's covered something similar, mention it. Otherwise say "This appears to be a fresh topic for your channel." Include slug if relevant for linking]
+[Has she covered this? If yes, how should this be different? If no, note it's fresh. Be specific.]
 
 CONTENT_GAP:
-[1-2 sentences on what makes this different from her existing content or competitors - the unique angle]
+[What unique angle makes this HER version? What will make people choose her video over the 1000 others on this topic?]
 
 TRENDING_RELEVANCE:
-[1 sentence on any current trends, seasons, or timing factors that affect this idea]
+[Any trends, sounds, formats, or timing she should leverage? Be specific - name actual trends if relevant.]
 
-## SCORING GUIDELINES
-- 80-100: Extremely high viral potential, perfect timing, strong hook potential
-- 60-79: Good potential, solid idea that fits her brand
-- 40-59: Decent idea but may need refinement or better timing
-- 20-39: Weak potential, oversaturated topic, or poor brand fit
-- 1-19: Not recommended, off-brand or problematic
+POSTING_TIME:
+[Best day/time to post this type of content for maximum reach. Be specific.]
 
-## HOOK GUIDELINES
-- Keep hooks under 15 words
-- Hook 1 (Curiosity): Create a knowledge gap or tease a revelation
-- Hook 2 (Relatable): Start with "POV:" or describe a common experience
-- Hook 3 (Bold): Take a stance, be controversial, or challenge assumptions
+---
 
-## FORMAT OPTIONS
-Primary formats to choose from:
-- TikTok (short, trendy, sound-driven)
-- YouTube Short (short vertical, discoverable)
-- YouTube Long (in-depth, 8+ minutes)
-- Instagram Reel (short, aesthetic, shareable)
-- Instagram Story (casual, behind-the-scenes)
-- Instagram Carousel (educational, swipeable)
-- Blog Post (SEO, detailed, evergreen)
+## SCORING GUIDE
+- 90-100: VIRAL POTENTIAL - Perfect timing, insane hook potential, highly shareable, comment-worthy
+- 75-89: STRONG - Will perform well, good engagement, solid content
+- 60-74: GOOD - Decent idea, needs stronger hook or angle
+- 40-59: NEEDS WORK - Oversaturated or weak angle, requires significant refinement
+- Below 40: SKIP - Off-brand, bad timing, or won't resonate
 
-Be specific to Kyndall's voice - she's warm, authentic, and speaks like a friend giving advice. Avoid generic influencer speak.`
+Be her secret weapon. Give her the analysis that turns good ideas into viral content.`
 }
 
 /**
@@ -150,11 +176,14 @@ function parseAnalysisResponse(text) {
     hook1: '',
     hook2: '',
     hook3: '',
+    description: '',
+    hashtags: '',
     bestFormat: 'TikTok',
     additionalFormats: [],
     similarContent: '',
     contentGap: '',
-    trendingRelevance: ''
+    trendingRelevance: '',
+    postingTime: ''
   }
 
   try {
@@ -170,6 +199,8 @@ function parseAnalysisResponse(text) {
     analysis.hook1 = extractSection(text, 'HOOK_1')
     analysis.hook2 = extractSection(text, 'HOOK_2')
     analysis.hook3 = extractSection(text, 'HOOK_3')
+    analysis.description = extractSection(text, 'DESCRIPTION')
+    analysis.hashtags = extractSection(text, 'HASHTAGS')
     
     // Extract best format
     const formatMatch = text.match(/BEST_FORMAT:\s*(.+?)(?:\n|$)/i)
@@ -186,13 +217,14 @@ function parseAnalysisResponse(text) {
         analysis.additionalFormats = formatsStr
           .split(',')
           .map(f => normalizeFormat(f.trim()))
-          .filter(f => f && f !== analysis.bestFormat) // Remove duplicates of best format
+          .filter(f => f && f !== analysis.bestFormat)
       }
     }
 
     analysis.similarContent = extractSection(text, 'SIMILAR_CONTENT')
     analysis.contentGap = extractSection(text, 'CONTENT_GAP')
     analysis.trendingRelevance = extractSection(text, 'TRENDING_RELEVANCE')
+    analysis.postingTime = extractSection(text, 'POSTING_TIME')
 
   } catch (error) {
     console.error('Error parsing Claude response:', error.message)
@@ -232,7 +264,6 @@ function normalizeFormat(format) {
  * Extract a section from the response text
  */
 function extractSection(text, sectionName) {
-  // Match section name followed by content until the next section or end
   const regex = new RegExp(`${sectionName}:\\s*\\n?([\\s\\S]*?)(?=\\n[A-Z_]+:|$)`, 'i')
   const match = text.match(regex)
   if (match) {
