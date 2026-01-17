@@ -18,6 +18,7 @@ export function initNotion(apiKey, dbId) {
 /**
  * Get all ideas that need analysis
  * (ideas without a virality score or where content changed since last analysis)
+ * Excludes items with "Posted" status
  */
 export async function getIdeasNeedingAnalysis() {
   if (!notion || !databaseId) {
@@ -28,20 +29,31 @@ export async function getIdeasNeedingAnalysis() {
     // Query for ideas that:
     // 1. Don't have a virality score yet, OR
     // 2. Have been updated since last analysis
+    // AND exclude anything with "Posted" status
     const response = await notion.databases.query({
       database_id: databaseId,
       filter: {
-        or: [
+        and: [
           {
-            property: 'Virality Score',
-            number: {
-              is_empty: true
-            }
+            or: [
+              {
+                property: 'Virality Score',
+                number: {
+                  is_empty: true
+                }
+              },
+              {
+                property: 'Needs Reanalysis',
+                checkbox: {
+                  equals: true
+                }
+              }
+            ]
           },
           {
-            property: 'Needs Reanalysis',
-            checkbox: {
-              equals: true
+            property: 'Status',
+            multi_select: {
+              does_not_contain: 'Posted'
             }
           }
         ]
