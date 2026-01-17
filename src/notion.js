@@ -133,6 +133,12 @@ export async function writeAnalysisToNotion(pageId, analysis) {
       'Hook 3': {
         rich_text: [{ text: { content: truncate(analysis.hook3, 500) } }]
       },
+      'Description': {
+        rich_text: [{ text: { content: truncate(analysis.description, 2000) } }]
+      },
+      'Hashtags': {
+        rich_text: [{ text: { content: truncate(analysis.hashtags, 2000) } }]
+      },
       'Best Format': {
         select: { name: analysis.bestFormat }
       },
@@ -144,6 +150,9 @@ export async function writeAnalysisToNotion(pageId, analysis) {
       },
       'Trending Relevance': {
         rich_text: [{ text: { content: truncate(analysis.trendingRelevance, 500) } }]
+      },
+      'Posting Time': {
+        rich_text: [{ text: { content: truncate(analysis.postingTime, 500) } }]
       },
       'Last Analyzed': {
         date: { start: new Date().toISOString() }
@@ -176,14 +185,15 @@ export async function writeAnalysisToNotion(pageId, analysis) {
       console.error('   - Virality Score (Number)')
       console.error('   - Score Breakdown (Text)')
       console.error('   - AI Review (Text)')
-      console.error('   - Hook 1 (Text)')
-      console.error('   - Hook 2 (Text)')
-      console.error('   - Hook 3 (Text)')
+      console.error('   - Hook 1, Hook 2, Hook 3 (Text)')
+      console.error('   - Description (Text)')
+      console.error('   - Hashtags (Text)')
       console.error('   - Best Format (Select)')
       console.error('   - Additional Formats (Multi-select)')
       console.error('   - Similar Content (Text)')
       console.error('   - Content Gap (Text)')
       console.error('   - Trending Relevance (Text)')
+      console.error('   - Posting Time (Text)')
       console.error('   - Last Analyzed (Date)')
       console.error('   - Needs Reanalysis (Checkbox)')
     }
