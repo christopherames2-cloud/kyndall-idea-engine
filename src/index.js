@@ -4,6 +4,7 @@
 // Writes virality scores, hooks, and insights back to Notion
 
 import cron from 'node-cron'
+import http from 'http'
 import { initNotion, getIdeasNeedingAnalysis, writeAnalysisToNotion } from './notion.js'
 import { initSanity, getContentContextForClaude } from './sanity.js'
 import { initClaude, analyzeIdea } from './claude.js'
@@ -21,14 +22,16 @@ const config = {
     projectId: process.env.SANITY_PROJECT_ID || 'f9drkp1w',
     dataset: process.env.SANITY_DATASET || 'production'
   },
-  checkInterval: parseInt(process.env.CHECK_INTERVAL_MINUTES) || 15
+  checkInterval: parseInt(process.env.CHECK_INTERVAL_MINUTES) || 15,
+  port: parseInt(process.env.PORT) || 8080
 }
 
 // Stats tracking
 const stats = {
   totalAnalyzed: 0,
   lastRun: null,
-  errors: 0
+  errors: 0,
+  isRunning: false
 }
 
 /**
@@ -54,9 +57,19 @@ function validateConfig() {
  * Process new ideas - main workflow
  */
 async function processNewIdeas() {
+  if (stats.isRunning) {
+    console.log('⏳ Already running, skipping...')
+    return { skipped: true }
+  }
+
+  stats.isRunning = true
+  
   console.log(`\n${'═'.repeat(50)}`)
   console.log(`💡 Checking for new ideas - ${new Date().toLocaleString()}`)
   console.log('═'.repeat(50))
+
+  let analyzed = 0
+  let errors = 0
 
   try {
     // Get ideas that need analysis
@@ -65,7 +78,8 @@ async function processNewIdeas() {
     if (ideas.length === 0) {
       console.log('   No new ideas to analyze')
       stats.lastRun = new Date()
-      return
+      stats.isRunning = false
+      return { analyzed: 0, errors: 0 }
     }
 
     console.log(`   Found ${ideas.length} idea(s) to analyze\n`)
@@ -75,14 +89,11 @@ async function processNewIdeas() {
     const existingContent = await getContentContextForClaude()
     console.log(`   ${existingContent.stats?.totalPosts || 0} posts, ${existingContent.stats?.totalArticles || 0} articles loaded\n`)
 
-    let analyzed = 0
-    let errors = 0
-
     // Process each idea
     for (const idea of ideas) {
       console.log(`\n💭 Analyzing: "${idea.title}"`)
-      console.log(`   Category: ${idea.category || 'Not set'}`)
-      console.log(`   Priority: ${idea.priority || 'Not set'}`)
+      console.log(`   Platform: ${Array.isArray(idea.platform) ? idea.platform.join(', ') : 'Not set'}`)
+      console.log(`   Status: ${Array.isArray(idea.status) ? idea.status.join(', ') : 'Not set'}`)
 
       try {
         // Analyze with Claude
@@ -137,7 +148,77 @@ async function processNewIdeas() {
   } catch (error) {
     console.error('❌ Error processing ideas:', error.message)
     stats.errors++
+    errors++
   }
+
+  stats.isRunning = false
+  return { analyzed, errors }
+}
+
+/**
+ * Create HTTP server for health checks and manual triggers
+ */
+function createServer() {
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, `http://localhost:${config.port}`)
+    
+    // Health check endpoint
+    if (url.pathname === '/health' || url.pathname === '/') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        status: 'healthy',
+        service: 'kyndall-idea-engine',
+        isRunning: stats.isRunning,
+        totalAnalyzed: stats.totalAnalyzed,
+        lastRun: stats.lastRun,
+        errors: stats.errors
+      }))
+      return
+    }
+
+    // Status endpoint
+    if (url.pathname === '/status') {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({
+        ...stats,
+        checkInterval: config.checkInterval,
+        uptime: process.uptime()
+      }))
+      return
+    }
+
+    // Manual trigger endpoint
+    if (url.pathname === '/analyze' && req.method === 'POST') {
+      console.log('🔄 Manual analysis triggered via API')
+      
+      // Run async, respond immediately
+      res.writeHead(202, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        message: 'Analysis started',
+        isRunning: stats.isRunning 
+      }))
+      
+      // Process in background
+      processNewIdeas().catch(console.error)
+      return
+    }
+
+    // 404 for everything else
+    res.writeHead(404, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ 
+      error: 'Not found',
+      endpoints: ['GET /', 'GET /health', 'GET /status', 'POST /analyze']
+    }))
+  })
+
+  server.listen(config.port, () => {
+    console.log(`🌐 HTTP server listening on port ${config.port}`)
+    console.log(`   Health: http://localhost:${config.port}/health`)
+    console.log(`   Status: http://localhost:${config.port}/status`)
+    console.log(`   Trigger: POST http://localhost:${config.port}/analyze`)
+  })
+
+  return server
 }
 
 /**
@@ -160,6 +241,9 @@ async function main() {
   console.log('✅ All services initialized')
   console.log(`⏰ Checking for new ideas every ${config.checkInterval} minutes\n`)
 
+  // Start HTTP server for health checks
+  createServer()
+
   // Run immediately on start
   await processNewIdeas()
 
@@ -169,7 +253,6 @@ async function main() {
 
   console.log('\n🎯 Idea Engine running.')
   console.log('   New Notion ideas → AI analysis → Enriched back to Notion')
-  console.log('   Press Ctrl+C to stop')
 }
 
 main().catch(error => {
