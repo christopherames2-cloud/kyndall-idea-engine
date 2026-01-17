@@ -91,13 +91,14 @@ function parseNotionPage(page) {
 
   return {
     id: page.id,
-    title: getTitle(props.Idea || props.Name || props.Title),
-    category: getSelect(props.Category),
-    notes: getRichText(props.Notes),
+    title: getTitle(props.Name || props.Idea || props.Title),
+    platform: getSelect(props.Platform),
     status: getSelect(props.Status),
-    priority: getSelect(props.Priority),
+    paidGifted: getSelect(props['Paid/Gifted']),
+    dueDate: getDate(props['Due Date']),
     viralityScore: getNumber(props['Virality Score']),
     lastAnalyzed: getDate(props['Last Analyzed']),
+    needsReanalysis: getCheckbox(props['Needs Reanalysis']),
     createdAt: page.created_time,
     updatedAt: page.last_edited_time,
   }
@@ -112,46 +113,56 @@ export async function writeAnalysisToNotion(pageId, analysis) {
   }
 
   try {
+    // Build the properties object
+    const properties = {
+      'Virality Score': {
+        number: analysis.viralityScore
+      },
+      'Score Breakdown': {
+        rich_text: [{ text: { content: truncate(analysis.scoreBreakdown, 2000) } }]
+      },
+      'AI Review': {
+        rich_text: [{ text: { content: truncate(analysis.aiReview, 2000) } }]
+      },
+      'Hook 1': {
+        rich_text: [{ text: { content: truncate(analysis.hook1, 500) } }]
+      },
+      'Hook 2': {
+        rich_text: [{ text: { content: truncate(analysis.hook2, 500) } }]
+      },
+      'Hook 3': {
+        rich_text: [{ text: { content: truncate(analysis.hook3, 500) } }]
+      },
+      'Best Format': {
+        select: { name: analysis.bestFormat }
+      },
+      'Similar Content': {
+        rich_text: [{ text: { content: truncate(analysis.similarContent, 1000) } }]
+      },
+      'Content Gap': {
+        rich_text: [{ text: { content: truncate(analysis.contentGap, 1000) } }]
+      },
+      'Trending Relevance': {
+        rich_text: [{ text: { content: truncate(analysis.trendingRelevance, 500) } }]
+      },
+      'Last Analyzed': {
+        date: { start: new Date().toISOString() }
+      },
+      'Needs Reanalysis': {
+        checkbox: false
+      }
+    }
+
+    // Add Additional Formats if provided (multi-select)
+    if (analysis.additionalFormats && analysis.additionalFormats.length > 0) {
+      properties['Additional Formats'] = {
+        multi_select: analysis.additionalFormats.map(format => ({ name: format }))
+      }
+    }
+
     await notion.pages.update({
       page_id: pageId,
-      properties: {
-        'Virality Score': {
-          number: analysis.viralityScore
-        },
-        'Score Breakdown': {
-          rich_text: [{ text: { content: truncate(analysis.scoreBreakdown, 2000) } }]
-        },
-        'AI Review': {
-          rich_text: [{ text: { content: truncate(analysis.aiReview, 2000) } }]
-        },
-        'Hook 1': {
-          rich_text: [{ text: { content: truncate(analysis.hook1, 500) } }]
-        },
-        'Hook 2': {
-          rich_text: [{ text: { content: truncate(analysis.hook2, 500) } }]
-        },
-        'Hook 3': {
-          rich_text: [{ text: { content: truncate(analysis.hook3, 500) } }]
-        },
-        'Best Format': {
-          select: { name: analysis.bestFormat }
-        },
-        'Similar Content': {
-          rich_text: [{ text: { content: truncate(analysis.similarContent, 1000) } }]
-        },
-        'Content Gap': {
-          rich_text: [{ text: { content: truncate(analysis.contentGap, 1000) } }]
-        },
-        'Trending Relevance': {
-          rich_text: [{ text: { content: truncate(analysis.trendingRelevance, 500) } }]
-        },
-        'Last Analyzed': {
-          date: { start: new Date().toISOString() }
-        },
-        'Needs Reanalysis': {
-          checkbox: false
-        }
-      }
+      properties
     })
 
     return true
@@ -169,6 +180,7 @@ export async function writeAnalysisToNotion(pageId, analysis) {
       console.error('   - Hook 2 (Text)')
       console.error('   - Hook 3 (Text)')
       console.error('   - Best Format (Select)')
+      console.error('   - Additional Formats (Multi-select)')
       console.error('   - Similar Content (Text)')
       console.error('   - Content Gap (Text)')
       console.error('   - Trending Relevance (Text)')
@@ -205,6 +217,11 @@ function getNumber(prop) {
 function getDate(prop) {
   if (!prop || prop.type !== 'date' || !prop.date) return null
   return prop.date.start
+}
+
+function getCheckbox(prop) {
+  if (!prop || prop.type !== 'checkbox') return false
+  return prop.checkbox
 }
 
 function truncate(str, maxLength) {

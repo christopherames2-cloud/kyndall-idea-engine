@@ -97,6 +97,9 @@ async function processNewIdeas() {
 
         console.log(`   ✅ Virality Score: ${analysis.viralityScore}/100`)
         console.log(`   📱 Best Format: ${analysis.bestFormat}`)
+        if (analysis.additionalFormats && analysis.additionalFormats.length > 0) {
+          console.log(`   📱 Also works for: ${analysis.additionalFormats.join(', ')}`)
+        }
 
         // Write back to Notion
         console.log('   📝 Writing to Notion...')

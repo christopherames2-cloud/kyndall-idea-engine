@@ -67,9 +67,8 @@ ${recentTopics?.map(t => `- ${t}`).join('\n') || '(none yet)'}
 
 ## THE IDEA TO ANALYZE
 Title: ${idea.title}
-Category: ${idea.category || 'Not specified'}
-Notes: ${idea.notes || 'None'}
-Priority: ${idea.priority || 'Not set'}
+Platform: ${idea.platform || 'Not specified'}
+Status: ${idea.status || 'Not set'}
 
 ## YOUR TASK
 Analyze this idea and respond in EXACTLY this format (keep each section concise):
@@ -91,7 +90,9 @@ HOOK_2:
 HOOK_3:
 [A bold/contrarian hook that stands out - 1-2 sentences max]
 
-BEST_FORMAT: [Choose ONE: TikTok | YouTube Short | YouTube Long | Instagram Reel | Blog Post | Carousel]
+BEST_FORMAT: [Choose ONE primary format: TikTok | YouTube Short | YouTube Long | Instagram Reel | Instagram Story | Instagram Carousel | Blog Post]
+
+ADDITIONAL_FORMATS: [List other formats this would work well for, comma-separated, or "None" if only one format fits]
 
 SIMILAR_CONTENT:
 [If she's covered something similar, mention it. Otherwise say "This appears to be a fresh topic for your channel." Include slug if relevant for linking]
@@ -115,6 +116,16 @@ TRENDING_RELEVANCE:
 - Hook 2 (Relatable): Start with "POV:" or describe a common experience
 - Hook 3 (Bold): Take a stance, be controversial, or challenge assumptions
 
+## FORMAT OPTIONS
+Primary formats to choose from:
+- TikTok (short, trendy, sound-driven)
+- YouTube Short (short vertical, discoverable)
+- YouTube Long (in-depth, 8+ minutes)
+- Instagram Reel (short, aesthetic, shareable)
+- Instagram Story (casual, behind-the-scenes)
+- Instagram Carousel (educational, swipeable)
+- Blog Post (SEO, detailed, evergreen)
+
 Be specific to Kyndall's voice - she's warm, authentic, and speaks like a friend giving advice. Avoid generic influencer speak.`
 }
 
@@ -130,6 +141,7 @@ function parseAnalysisResponse(text) {
     hook2: '',
     hook3: '',
     bestFormat: 'TikTok',
+    additionalFormats: [],
     similarContent: '',
     contentGap: '',
     trendingRelevance: ''
@@ -153,20 +165,19 @@ function parseAnalysisResponse(text) {
     const formatMatch = text.match(/BEST_FORMAT:\s*(.+?)(?:\n|$)/i)
     if (formatMatch) {
       const format = formatMatch[1].trim()
-      // Normalize format names
-      const formatMap = {
-        'tiktok': 'TikTok',
-        'youtube short': 'YouTube Short',
-        'youtube shorts': 'YouTube Short',
-        'youtube long': 'YouTube Long',
-        'youtube long-form': 'YouTube Long',
-        'instagram reel': 'Instagram Reel',
-        'reel': 'Instagram Reel',
-        'blog post': 'Blog Post',
-        'blog': 'Blog Post',
-        'carousel': 'Carousel'
+      analysis.bestFormat = normalizeFormat(format)
+    }
+
+    // Extract additional formats
+    const additionalMatch = text.match(/ADDITIONAL_FORMATS:\s*(.+?)(?:\n|$)/i)
+    if (additionalMatch) {
+      const formatsStr = additionalMatch[1].trim()
+      if (formatsStr.toLowerCase() !== 'none') {
+        analysis.additionalFormats = formatsStr
+          .split(',')
+          .map(f => normalizeFormat(f.trim()))
+          .filter(f => f && f !== analysis.bestFormat) // Remove duplicates of best format
       }
-      analysis.bestFormat = formatMap[format.toLowerCase()] || format
     }
 
     analysis.similarContent = extractSection(text, 'SIMILAR_CONTENT')
@@ -178,6 +189,33 @@ function parseAnalysisResponse(text) {
   }
 
   return analysis
+}
+
+/**
+ * Normalize format names to match Notion select options
+ */
+function normalizeFormat(format) {
+  const formatMap = {
+    'tiktok': 'TikTok',
+    'youtube short': 'YouTube Short',
+    'youtube shorts': 'YouTube Short',
+    'yt short': 'YouTube Short',
+    'youtube long': 'YouTube Long',
+    'youtube long-form': 'YouTube Long',
+    'yt long': 'YouTube Long',
+    'instagram reel': 'Instagram Reel',
+    'ig reel': 'Instagram Reel',
+    'reel': 'Instagram Reel',
+    'instagram story': 'Instagram Story',
+    'ig story': 'Instagram Story',
+    'story': 'Instagram Story',
+    'instagram carousel': 'Instagram Carousel',
+    'ig carousel': 'Instagram Carousel',
+    'carousel': 'Instagram Carousel',
+    'blog post': 'Blog Post',
+    'blog': 'Blog Post'
+  }
+  return formatMap[format.toLowerCase()] || format
 }
 
 /**
