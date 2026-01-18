@@ -212,8 +212,9 @@ export async function getUserInfo() {
     
     console.log('   🔍 TikTok user info response:', JSON.stringify(data).substring(0, 300))
     
-    if (data.error) {
-      throw new Error(data.error.message || data.error.code || JSON.stringify(data.error))
+    // TikTok returns error.code = "ok" for success, so check for actual errors
+    if (data.error && data.error.code && data.error.code !== 'ok') {
+      throw new Error(data.error.message || data.error.code)
     }
     
     const user = data.data?.user
@@ -258,8 +259,9 @@ export async function getUserVideos(maxCount = 20, cursor = null) {
     
     console.log('   🔍 TikTok videos response:', JSON.stringify(data).substring(0, 300))
     
-    if (data.error) {
-      throw new Error(data.error.message || data.error.code || JSON.stringify(data.error))
+    // TikTok returns error.code = "ok" for success, so check for actual errors
+    if (data.error && data.error.code && data.error.code !== 'ok') {
+      throw new Error(data.error.message || data.error.code)
     }
     
     const videos = (data.data?.videos || []).map(video => ({
