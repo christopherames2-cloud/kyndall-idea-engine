@@ -210,12 +210,17 @@ export async function getUserInfo() {
 
     const data = await tiktokRequest('/user/info/?fields=open_id,display_name,avatar_url,follower_count,following_count,likes_count,video_count')
     
+    console.log('   🔍 TikTok user info response:', JSON.stringify(data).substring(0, 300))
+    
     if (data.error) {
-      throw new Error(data.error.message)
+      throw new Error(data.error.message || data.error.code || JSON.stringify(data.error))
     }
     
     const user = data.data?.user
-    if (!user) return null
+    if (!user) {
+      console.log('   ⚠️ TikTok: No user data in response')
+      return null
+    }
     
     return {
       openId: user.open_id,
@@ -227,7 +232,7 @@ export async function getUserInfo() {
       videoCount: user.video_count
     }
   } catch (error) {
-    console.error('Error fetching TikTok user info:', error.message)
+    console.error('Error fetching TikTok user info:', error.message || error)
     return null
   }
 }
@@ -251,8 +256,10 @@ export async function getUserVideos(maxCount = 20, cursor = null) {
     
     const data = await tiktokRequest(endpoint, { method: 'POST' })
     
+    console.log('   🔍 TikTok videos response:', JSON.stringify(data).substring(0, 300))
+    
     if (data.error) {
-      throw new Error(data.error.message)
+      throw new Error(data.error.message || data.error.code || JSON.stringify(data.error))
     }
     
     const videos = (data.data?.videos || []).map(video => ({
@@ -271,7 +278,7 @@ export async function getUserVideos(maxCount = 20, cursor = null) {
       hasMore: data.data?.has_more
     }
   } catch (error) {
-    console.error('Error fetching TikTok videos:', error.message)
+    console.error('Error fetching TikTok videos:', error.message || error)
     return { videos: [], cursor: null, hasMore: false }
   }
 }
