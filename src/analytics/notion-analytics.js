@@ -89,6 +89,7 @@ export async function findVideoByPlatformId(videoId, platform) {
   }
 
   try {
+    console.log(`   🔍 Checking for existing: ${videoId} (${platform})`)
     const response = await notion.databases.query({
       database_id: analyticsDbId,
       filter: {
@@ -99,6 +100,7 @@ export async function findVideoByPlatformId(videoId, platform) {
       }
     })
 
+    console.log(`   🔍 Found ${response.results.length} existing entries`)
     if (response.results.length > 0) {
       return parseAnalyticsPage(response.results[0])
     }
