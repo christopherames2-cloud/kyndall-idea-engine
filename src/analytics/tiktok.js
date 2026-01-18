@@ -1,49 +1,102 @@
 // kyndall-idea-engine/src/analytics/tiktok.js
 // TikTok API integration for fetching video analytics
+// Fetches tokens from Sanity (shared with kyndall-site)
+
+import { createClient } from '@sanity/client'
 
 const TIKTOK_API_BASE = 'https://open.tiktokapis.com/v2'
+const TIKTOK_TOKEN_URL = 'https://open.tiktokapis.com/v2/oauth/token/'
 
-let accessToken = null
-let refreshToken = null
+let sanityClient = null
 let clientKey = null
 let clientSecret = null
+let cachedCredentials = null
 
 /**
- * Initialize TikTok API
+ * Initialize TikTok API with Sanity connection
  */
-export function initTikTok(key, secret, access, refresh) {
-  clientKey = key
-  clientSecret = secret
-  accessToken = access
-  refreshToken = refresh
-  console.log('✅ TikTok API initialized')
+export function initTikTok(config) {
+  clientKey = config.clientKey
+  clientSecret = config.clientSecret
+  
+  if (config.sanityProjectId && config.sanityToken) {
+    sanityClient = createClient({
+      projectId: config.sanityProjectId,
+      dataset: config.sanityDataset || 'production',
+      apiVersion: '2024-01-01',
+      token: config.sanityToken,
+      useCdn: false,
+    })
+    console.log('✅ TikTok API initialized (using Sanity for tokens)')
+  } else {
+    console.log('⚠️ TikTok: Sanity not configured - cannot fetch tokens')
+  }
 }
 
 /**
- * Update tokens (after refresh)
+ * Get TikTok credentials from Sanity
  */
-export function updateTokens(access, refresh) {
-  accessToken = access
-  refreshToken = refresh
-}
-
-/**
- * Get current tokens (for persistence)
- */
-export function getTokens() {
-  return { accessToken, refreshToken }
-}
-
-/**
- * Refresh the access token
- */
-export async function refreshAccessToken() {
-  if (!clientKey || !clientSecret || !refreshToken) {
-    throw new Error('TikTok not initialized or missing refresh token')
+async function getCredentials() {
+  if (!sanityClient) {
+    throw new Error('TikTok Sanity client not initialized')
   }
 
   try {
-    const response = await fetch('https://open.tiktokapis.com/v2/oauth/token/', {
+    const credentials = await sanityClient.fetch(
+      `*[_id == "tiktok-credentials"][0]`
+    )
+    
+    if (!credentials) {
+      console.log('   ⚠️ TikTok: No credentials found in Sanity - connect at /admin/tiktok')
+      return null
+    }
+    
+    cachedCredentials = credentials
+    return credentials
+  } catch (error) {
+    console.error('Error fetching TikTok credentials from Sanity:', error.message)
+    return null
+  }
+}
+
+/**
+ * Get valid access token, refreshing if needed
+ */
+async function getValidAccessToken() {
+  const credentials = await getCredentials()
+  if (!credentials) return null
+
+  const now = Date.now()
+  const accessExpiry = new Date(credentials.accessTokenExpiry).getTime()
+  
+  // If token is still valid (with 5 min buffer), return it
+  if (now < accessExpiry - 5 * 60 * 1000) {
+    return credentials.accessToken
+  }
+
+  // Check if refresh token is still valid
+  const refreshExpiry = new Date(credentials.refreshTokenExpiry).getTime()
+  if (now >= refreshExpiry) {
+    console.log('   ❌ TikTok: Refresh token expired - reconnect at /admin/tiktok')
+    return null
+  }
+
+  // Refresh the token
+  return await refreshAccessToken(credentials.refreshToken)
+}
+
+/**
+ * Refresh the access token and update Sanity
+ */
+async function refreshAccessToken(refreshToken) {
+  if (!clientKey || !clientSecret) {
+    throw new Error('TikTok client credentials not configured')
+  }
+
+  console.log('   🔄 TikTok: Refreshing access token...')
+
+  try {
+    const response = await fetch(TIKTOK_TOKEN_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -62,14 +115,25 @@ export async function refreshAccessToken() {
       throw new Error(data.error_description || data.error)
     }
 
-    accessToken = data.access_token
-    refreshToken = data.refresh_token
-    
-    console.log('✅ TikTok token refreshed')
-    return { accessToken, refreshToken }
+    // Update tokens in Sanity
+    const newAccessExpiry = Date.now() + (data.expires_in * 1000)
+    const newRefreshExpiry = Date.now() + (data.refresh_expires_in * 1000)
+
+    await sanityClient.patch('tiktok-credentials')
+      .set({
+        accessToken: data.access_token,
+        refreshToken: data.refresh_token,
+        accessTokenExpiry: new Date(newAccessExpiry).toISOString(),
+        refreshTokenExpiry: new Date(newRefreshExpiry).toISOString(),
+        lastRefreshed: new Date().toISOString(),
+      })
+      .commit()
+
+    console.log('   ✅ TikTok: Token refreshed and saved to Sanity')
+    return data.access_token
   } catch (error) {
     console.error('Error refreshing TikTok token:', error.message)
-    throw error
+    return null
   }
 }
 
@@ -77,8 +141,9 @@ export async function refreshAccessToken() {
  * Make authenticated request to TikTok API
  */
 async function tiktokRequest(endpoint, options = {}) {
+  const accessToken = await getValidAccessToken()
   if (!accessToken) {
-    throw new Error('TikTok not initialized')
+    throw new Error('TikTok not authenticated')
   }
 
   const url = `${TIKTOK_API_BASE}${endpoint}`
@@ -94,25 +159,27 @@ async function tiktokRequest(endpoint, options = {}) {
 
   const data = await response.json()
 
-  // If token expired, try to refresh and retry
   if (data.error?.code === 'access_token_invalid' || response.status === 401) {
-    console.log('🔄 TikTok token expired, refreshing...')
-    await refreshAccessToken()
-    
-    // Retry the request with new token
-    const retryResponse = await fetch(url, {
-      ...options,
-      headers: {
-        'Authorization': `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-    })
-    
-    return await retryResponse.json()
+    console.log('   🔄 TikTok: Token invalid, credentials may need refresh')
+    throw new Error('TikTok token invalid')
   }
 
   return data
+}
+
+/**
+ * Check if TikTok is connected
+ */
+export async function isConnected() {
+  try {
+    const credentials = await getCredentials()
+    if (!credentials) return false
+    
+    const refreshExpiry = new Date(credentials.refreshTokenExpiry).getTime()
+    return Date.now() < refreshExpiry
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -120,6 +187,12 @@ async function tiktokRequest(endpoint, options = {}) {
  */
 export async function getUserInfo() {
   try {
+    const connected = await isConnected()
+    if (!connected) {
+      console.log('   ⚠️ TikTok: Not connected')
+      return null
+    }
+
     const data = await tiktokRequest('/user/info/?fields=open_id,display_name,avatar_url,follower_count,following_count,likes_count,video_count')
     
     if (data.error) {
@@ -149,6 +222,11 @@ export async function getUserInfo() {
  */
 export async function getUserVideos(maxCount = 20, cursor = null) {
   try {
+    const connected = await isConnected()
+    if (!connected) {
+      return { videos: [], cursor: null, hasMore: false }
+    }
+
     const fields = 'id,title,video_description,create_time,cover_image_url,share_url,duration,height,width'
     let endpoint = `/video/list/?fields=${fields}&max_count=${maxCount}`
     
@@ -169,7 +247,7 @@ export async function getUserVideos(maxCount = 20, cursor = null) {
       publishedAt: new Date(video.create_time * 1000).toISOString(),
       thumbnail: video.cover_image_url,
       shareUrl: video.share_url,
-      duration: video.duration, // in seconds
+      duration: video.duration,
     }))
     
     return {
@@ -206,7 +284,6 @@ export async function getAllUserVideos(maxVideos = 100) {
 
 /**
  * Get video stats by video IDs
- * Note: TikTok API requires video IDs in a specific format
  */
 export async function getVideoStats(videoIds) {
   if (!Array.isArray(videoIds)) {
@@ -214,6 +291,11 @@ export async function getVideoStats(videoIds) {
   }
   
   try {
+    const connected = await isConnected()
+    if (!connected) {
+      return []
+    }
+
     const fields = 'id,title,video_description,create_time,cover_image_url,share_url,view_count,like_count,comment_count,share_count,duration'
     
     const data = await tiktokRequest('/video/query/?fields=' + fields, {
@@ -241,7 +323,6 @@ export async function getVideoStats(videoIds) {
       likes: video.like_count || 0,
       comments: video.comment_count || 0,
       shares: video.share_count || 0,
-      // TikTok doesn't provide these
       watchTimeHours: null,
       avgViewDuration: null,
       retentionPercent: null
