@@ -27,9 +27,25 @@ export async function runMilestoneAnalysis() {
   console.log('\n🧠 Running milestone analysis...')
   
   const videos = await getAllTrackedVideos()
-  const results = { d1: 0, d7: 0, d30: 0, d90: 0 }
+  const now = new Date()
+  const results = { d1: 0, d7: 0, d30: 0, d90: 0, legacy: 0 }
 
   for (const video of videos) {
+    const postedDate = video.postedDate ? new Date(video.postedDate) : null
+    const daysSincePost = postedDate ? Math.floor((now - postedDate) / (1000 * 60 * 60 * 24)) : 999
+    
+    // LEGACY ANALYSIS: For videos older than 180 days that have never been analyzed
+    // Runs once on initial import, then never again
+    if (daysSincePost > 180 && !video.analysisD30 && !video.whyItWorked) {
+      console.log(`   🔍 Legacy Analysis: ${video.title.substring(0, 40)}...`)
+      const analysis = await analyzeLegacy(video)
+      if (analysis) {
+        await saveMilestoneAnalysis(video.id, 30, analysis) // Store in D30 fields
+        results.legacy++
+      }
+      continue // Skip milestone checks for legacy videos
+    }
+
     // D1 Analysis - recorded but not analyzed
     if (video.d1Recorded && !video.analysisD1) {
       console.log(`   🔍 D1 Analysis: ${video.title.substring(0, 40)}...`)
@@ -89,8 +105,84 @@ export async function runMilestoneAnalysis() {
     }
   }
 
-  console.log(`   Completed: D1=${results.d1}, D7=${results.d7}, D30=${results.d30}, D90=${results.d90}`)
+  console.log(`   Completed: D1=${results.d1}, D7=${results.d7}, D30=${results.d30}, D90=${results.d90}, Legacy=${results.legacy}`)
   return results
+}
+
+/**
+ * Legacy Analysis - For videos older than 180 days
+ * One-time analysis based on current stats
+ */
+async function analyzeLegacy(video) {
+  const prompt = buildLegacyPrompt(video)
+  
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: prompt }]
+    })
+
+    return parseLegacyResponse(response.content[0].text)
+  } catch (error) {
+    console.error('Error in Legacy analysis:', error.message)
+    return null
+  }
+}
+
+function buildLegacyPrompt(video) {
+  const engagementRate = video.viewsCurrent > 0 
+    ? (((video.likesCurrent || 0) + (video.commentsCurrent || 0)) / video.viewsCurrent * 100).toFixed(2)
+    : 0
+
+  return `You are analyzing the overall performance of an older video for a beauty/lifestyle content creator.
+
+VIDEO: "${video.title}"
+PLATFORM: ${video.platform}
+URL: ${video.url}
+POSTED: ${video.postedDate || 'Unknown'}
+
+LIFETIME STATS:
+- Views: ${(video.viewsCurrent || 0).toLocaleString()}
+- Likes: ${(video.likesCurrent || 0).toLocaleString()}
+- Comments: ${(video.commentsCurrent || 0).toLocaleString()}
+- Shares: ${(video.sharesCurrent || 0).toLocaleString()}
+- Engagement Rate: ${engagementRate}%
+${video.retentionCurrent ? `- Retention: ${video.retentionCurrent}%` : ''}
+
+This is an older video being added to our tracking system. Provide a one-time performance summary:
+
+PERFORMANCE_SCORE: [1-100 based on overall success for a beauty creator]
+
+PERFORMANCE_TREND: [🔥 Viral | 📈 Strong | 📊 Average | 📉 Below Average | 💀 Underperformed]
+
+SUMMARY:
+[2-3 sentences summarizing the overall lifetime performance]
+
+WHY_IT_WORKED:
+[2-3 bullet points about what likely made this content successful (or why it didn't work). Consider the title, likely content type, engagement signals.]
+
+CONTENT_TYPE:
+[Categorize: Tutorial, Review, GRWM, Routine, Tips, Haul, Comparison, Other]`
+}
+
+function parseLegacyResponse(text) {
+  const scoreMatch = text.match(/PERFORMANCE_SCORE:\s*(\d+)/i)
+  const trendMatch = text.match(/PERFORMANCE_TREND:\s*(.+?)(?:\n|$)/i)
+  const summaryMatch = text.match(/SUMMARY:\s*\n?([\s\S]*?)(?=\n(?:WHY_IT_WORKED|$))/i)
+  const whyMatch = text.match(/WHY_IT_WORKED:\s*\n?([\s\S]*?)(?=\n(?:CONTENT_TYPE|$))/i)
+  const typeMatch = text.match(/CONTENT_TYPE:\s*(.+?)(?:\n|$)/i)
+
+  return {
+    summary: [
+      trendMatch ? trendMatch[1].trim() : '',
+      summaryMatch ? summaryMatch[1].trim() : '',
+      typeMatch ? `\nContent Type: ${typeMatch[1].trim()}` : ''
+    ].filter(Boolean).join('\n\n'),
+    performanceScore: scoreMatch ? parseInt(scoreMatch[1]) : null,
+    performanceTrend: trendMatch ? mapTrendToSelect(trendMatch[1].trim()) : null,
+    whyItWorked: whyMatch ? whyMatch[1].trim() : null
+  }
 }
 
 /**
