@@ -290,12 +290,30 @@ export async function getUserVideos(maxCount = 20, cursor = null) {
  */
 export async function getAllUserVideos(maxVideos = 100) {
   const allVideos = []
+  const seenIds = new Set()
   let cursor = null
   let hasMore = true
+  let attempts = 0
+  const maxAttempts = 10 // Prevent infinite loops
   
-  while (hasMore && allVideos.length < maxVideos) {
+  while (hasMore && allVideos.length < maxVideos && attempts < maxAttempts) {
+    attempts++
     const result = await getUserVideos(20, cursor)
-    allVideos.push(...result.videos)
+    
+    // Deduplicate videos
+    for (const video of result.videos) {
+      if (!seenIds.has(video.videoId)) {
+        seenIds.add(video.videoId)
+        allVideos.push(video)
+      }
+    }
+    
+    // If cursor didn't change, we're stuck in a loop
+    if (cursor === result.cursor) {
+      console.log('   ⚠️ TikTok: Cursor not advancing, stopping pagination')
+      break
+    }
+    
     cursor = result.cursor
     hasMore = result.hasMore
     
@@ -303,6 +321,7 @@ export async function getAllUserVideos(maxVideos = 100) {
     await new Promise(resolve => setTimeout(resolve, 500))
   }
   
+  console.log(`   📊 TikTok: Fetched ${allVideos.length} unique videos`)
   return allVideos.slice(0, maxVideos)
 }
 
