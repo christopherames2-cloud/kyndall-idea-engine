@@ -31,7 +31,8 @@ const config = {
   },
   sanity: {
     projectId: process.env.SANITY_PROJECT_ID || 'f9drkp1w',
-    dataset: process.env.SANITY_DATASET || 'production'
+    dataset: process.env.SANITY_DATASET || 'production',
+    token: process.env.SANITY_API_TOKEN  // Needed for TikTok token access
   },
   youtube: {
     apiKey: process.env.YOUTUBE_API_KEY,
@@ -39,9 +40,8 @@ const config = {
   },
   tiktok: {
     clientKey: process.env.TIKTOK_CLIENT_KEY,
-    clientSecret: process.env.TIKTOK_CLIENT_SECRET,
-    accessToken: process.env.TIKTOK_ACCESS_TOKEN,
-    refreshToken: process.env.TIKTOK_REFRESH_TOKEN
+    clientSecret: process.env.TIKTOK_CLIENT_SECRET
+    // Tokens now fetched from Sanity (shared with kyndall-site)
   },
   resend: {
     apiKey: process.env.RESEND_API_KEY,
@@ -411,6 +411,7 @@ async function main() {
   initAnalytics({
     youtube: config.youtube,
     tiktok: config.tiktok,
+    sanity: config.sanity,  // For TikTok token access
     notion: {
       apiKey: config.notion.apiKey,
       analyticsDbId: config.notion.analyticsDbId,
