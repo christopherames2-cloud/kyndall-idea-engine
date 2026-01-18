@@ -111,6 +111,7 @@ export async function findVideoByPlatformId(videoId, platform) {
 
 /**
  * Create a new video entry in Analytics database
+ * Checks for duplicates first to prevent race conditions
  */
 export async function createVideoEntry(video) {
   if (!notion || !analyticsDbId) {
@@ -118,6 +119,13 @@ export async function createVideoEntry(video) {
   }
 
   try {
+    // Check if video already exists (prevents duplicates from race conditions)
+    const existing = await findVideoByPlatformId(video.videoId, video.platform)
+    if (existing) {
+      console.log(`   ⏭️  Skipping duplicate: ${video.title?.substring(0, 40)}...`)
+      return existing.id // Return existing ID instead of creating duplicate
+    }
+
     const properties = {
       'Name': {
         title: [{ text: { content: video.title } }]
