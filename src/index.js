@@ -2,18 +2,29 @@
 // Kyndall Idea Engine
 // Monitors Notion for new content ideas and enriches them with AI analysis
 // Writes virality scores, hooks, and insights back to Notion
+// Now includes Analytics module for performance tracking!
 
 import cron from 'node-cron'
 import http from 'http'
 import { initNotion, getIdeasNeedingAnalysis, writeAnalysisToNotion, createIdeaInNotion, archivePage } from './notion.js'
 import { initSanity, getContentContextForClaude } from './sanity.js'
 import { initClaude, analyzeIdea, isHelpRequest, extractHelpTopic, brainstormIdeas } from './claude.js'
+import { 
+  initAnalytics, 
+  runAnalyticsCycle, 
+  runWeeklyReport, 
+  previewWeeklyReport,
+  getSummary,
+  isSunday,
+  getAnalyticsStatus 
+} from './analytics/index.js'
 
 // Configuration from environment
 const config = {
   notion: {
     apiKey: process.env.NOTION_API_KEY,
-    databaseId: process.env.NOTION_IDEAS_DATABASE_ID
+    databaseId: process.env.NOTION_IDEAS_DATABASE_ID,
+    analyticsDbId: process.env.NOTION_ANALYTICS_DATABASE_ID
   },
   anthropic: {
     apiKey: process.env.ANTHROPIC_API_KEY
@@ -22,7 +33,22 @@ const config = {
     projectId: process.env.SANITY_PROJECT_ID || 'f9drkp1w',
     dataset: process.env.SANITY_DATASET || 'production'
   },
+  youtube: {
+    apiKey: process.env.YOUTUBE_API_KEY,
+    channelId: process.env.YOUTUBE_CHANNEL_ID
+  },
+  tiktok: {
+    clientKey: process.env.TIKTOK_CLIENT_KEY,
+    clientSecret: process.env.TIKTOK_CLIENT_SECRET,
+    accessToken: process.env.TIKTOK_ACCESS_TOKEN,
+    refreshToken: process.env.TIKTOK_REFRESH_TOKEN
+  },
+  resend: {
+    apiKey: process.env.RESEND_API_KEY,
+    recipientEmail: process.env.REPORT_EMAIL || 'hello@kyndallames.com'
+  },
   checkInterval: parseInt(process.env.CHECK_INTERVAL_MINUTES) || 15,
+  analyticsInterval: parseInt(process.env.ANALYTICS_INTERVAL_HOURS) || 4,
   port: parseInt(process.env.PORT) || 8080
 }
 
@@ -30,9 +56,12 @@ const config = {
 const stats = {
   totalAnalyzed: 0,
   totalBrainstormed: 0,
-  lastRun: null,
+  lastIdeaRun: null,
+  lastAnalyticsRun: null,
+  lastWeeklyReport: null,
   errors: 0,
-  isRunning: false
+  isRunning: false,
+  analyticsRunning: false
 }
 
 /**
@@ -117,7 +146,7 @@ async function processNewIdeas() {
     
     if (ideas.length === 0) {
       console.log('   No new ideas to analyze')
-      stats.lastRun = new Date()
+      stats.lastIdeaRun = new Date()
       stats.isRunning = false
       return { analyzed: 0, errors: 0 }
     }
@@ -185,7 +214,7 @@ async function processNewIdeas() {
     errors++
   }
 
-  stats.lastRun = new Date()
+  stats.lastIdeaRun = new Date()
   stats.isRunning = false
   return { analyzed, errors }
 }
@@ -204,9 +233,12 @@ function createServer() {
         status: 'healthy',
         service: 'kyndall-idea-engine',
         isRunning: stats.isRunning,
+        analyticsRunning: stats.analyticsRunning,
         totalAnalyzed: stats.totalAnalyzed,
         totalBrainstormed: stats.totalBrainstormed,
-        lastRun: stats.lastRun,
+        lastIdeaRun: stats.lastIdeaRun,
+        lastAnalyticsRun: stats.lastAnalyticsRun,
+        lastWeeklyReport: stats.lastWeeklyReport,
         errors: stats.errors
       }))
       return
@@ -239,11 +271,74 @@ function createServer() {
       return
     }
 
+    // Analytics trigger endpoint
+    if (url.pathname === '/analytics' && req.method === 'POST') {
+      console.log('🔄 Manual analytics triggered via API')
+      
+      res.writeHead(202, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ 
+        message: 'Analytics cycle started',
+        analyticsRunning: stats.analyticsRunning 
+      }))
+      
+      // Process in background
+      runAnalytics().catch(console.error)
+      return
+    }
+
+    // Analytics summary endpoint
+    if (url.pathname === '/analytics/summary' && req.method === 'GET') {
+      try {
+        const summary = await getSummary()
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify(summary))
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: error.message }))
+      }
+      return
+    }
+
+    // Weekly report preview endpoint
+    if (url.pathname === '/report/preview' && req.method === 'GET') {
+      try {
+        const html = await previewWeeklyReport()
+        res.writeHead(200, { 'Content-Type': 'text/html' })
+        res.end(html)
+      } catch (error) {
+        res.writeHead(500, { 'Content-Type': 'application/json' })
+        res.end(JSON.stringify({ error: error.message }))
+      }
+      return
+    }
+
+    // Send weekly report manually
+    if (url.pathname === '/report/send' && req.method === 'POST') {
+      console.log('📧 Manual weekly report triggered')
+      
+      res.writeHead(202, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ message: 'Weekly report sending...' }))
+      
+      runWeeklyReport().then(success => {
+        if (success) stats.lastWeeklyReport = new Date()
+      }).catch(console.error)
+      return
+    }
+
     // 404 for everything else
     res.writeHead(404, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ 
       error: 'Not found',
-      endpoints: ['GET /', 'GET /health', 'GET /status', 'POST /analyze']
+      endpoints: [
+        'GET /', 
+        'GET /health', 
+        'GET /status', 
+        'POST /analyze',
+        'POST /analytics',
+        'GET /analytics/summary',
+        'GET /report/preview',
+        'POST /report/send'
+      ]
     }))
   })
 
@@ -258,6 +353,41 @@ function createServer() {
 }
 
 /**
+ * Run analytics cycle
+ */
+async function runAnalytics() {
+  if (stats.analyticsRunning) {
+    console.log('⏳ Analytics already running, skipping...')
+    return
+  }
+
+  stats.analyticsRunning = true
+  
+  try {
+    await runAnalyticsCycle()
+    stats.lastAnalyticsRun = new Date()
+  } catch (error) {
+    console.error('❌ Analytics error:', error.message)
+    stats.errors++
+  }
+  
+  stats.analyticsRunning = false
+}
+
+/**
+ * Check and send weekly report (Sundays at 9am)
+ */
+async function checkWeeklyReport() {
+  if (isSunday()) {
+    console.log('📧 Sunday detected - sending weekly report...')
+    const success = await runWeeklyReport()
+    if (success) {
+      stats.lastWeeklyReport = new Date()
+    }
+  }
+}
+
+/**
  * Initialize and start the engine
  */
 async function main() {
@@ -266,31 +396,61 @@ async function main() {
   console.log('🤖 Enriches ideas with AI-powered insights')
   console.log('📊 Virality scores, hooks, and strategic advice')
   console.log('🆘 "help [topic]" - Brainstorms 5 high-viral ideas')
+  console.log('📈 Analytics tracking for YouTube & TikTok')
+  console.log('📧 Weekly performance reports')
   console.log('')
 
   validateConfig()
 
-  // Initialize services
+  // Initialize core services
   initNotion(config.notion.apiKey, config.notion.databaseId)
   initSanity(config.sanity.projectId, config.sanity.dataset)
   initClaude(config.anthropic.apiKey)
 
+  // Initialize analytics module
+  initAnalytics({
+    youtube: config.youtube,
+    tiktok: config.tiktok,
+    notion: {
+      apiKey: config.notion.apiKey,
+      analyticsDbId: config.notion.analyticsDbId,
+      ideasDbId: config.notion.databaseId
+    },
+    anthropic: config.anthropic,
+    resend: config.resend
+  })
+
   console.log('✅ All services initialized')
-  console.log(`⏰ Checking for new ideas every ${config.checkInterval} minutes\n`)
+  console.log(`⏰ Ideas check: every ${config.checkInterval} minutes`)
+  console.log(`📊 Analytics sync: every ${config.analyticsInterval} hours`)
+  console.log(`📧 Weekly report: Sundays at 9am\n`)
 
   // Start HTTP server for health checks
   createServer()
 
   // Run immediately on start
   await processNewIdeas()
+  
+  // Run analytics on start (if configured)
+  if (config.notion.analyticsDbId) {
+    await runAnalytics()
+  }
 
-  // Schedule recurring checks
-  const cronExpression = `*/${config.checkInterval} * * * *`
-  cron.schedule(cronExpression, processNewIdeas)
+  // Schedule idea checks (every 15 minutes)
+  const ideaCron = `*/${config.checkInterval} * * * *`
+  cron.schedule(ideaCron, processNewIdeas)
+
+  // Schedule analytics (every 4 hours)
+  const analyticsCron = `0 */${config.analyticsInterval} * * *`
+  cron.schedule(analyticsCron, runAnalytics)
+
+  // Schedule weekly report check (every day at 9am, but only sends on Sunday)
+  cron.schedule('0 9 * * *', checkWeeklyReport)
 
   console.log('\n🎯 Idea Engine running.')
   console.log('   New Notion ideas → AI analysis → Enriched back to Notion')
   console.log('   "help [topic]" → 5 high-viral AI ideas → New Notion pages')
+  console.log('   Video stats → Milestone analysis → Performance insights')
 }
 
 main().catch(error => {
