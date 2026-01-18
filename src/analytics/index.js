@@ -31,16 +31,17 @@ export function initAnalytics(config) {
     console.log('⚠️  YouTube not configured (missing API key or channel ID)')
   }
 
-  // TikTok
-  if (config.tiktok?.clientKey && config.tiktok?.accessToken) {
-    initTikTok(
-      config.tiktok.clientKey,
-      config.tiktok.clientSecret,
-      config.tiktok.accessToken,
-      config.tiktok.refreshToken
-    )
+  // TikTok (uses Sanity for token storage - shared with kyndall-site)
+  if (config.tiktok?.clientKey && config.sanity?.token) {
+    initTikTok({
+      clientKey: config.tiktok.clientKey,
+      clientSecret: config.tiktok.clientSecret,
+      sanityProjectId: config.sanity.projectId,
+      sanityDataset: config.sanity.dataset,
+      sanityToken: config.sanity.token,
+    })
   } else {
-    console.log('⚠️  TikTok not configured (missing credentials)')
+    console.log('⚠️  TikTok not configured (need client key + Sanity token)')
   }
 
   // Instagram (placeholder)
