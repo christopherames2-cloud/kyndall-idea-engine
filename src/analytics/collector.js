@@ -83,8 +83,15 @@ export async function syncYouTube() {
     const newVideos = recentVideos.filter(v => !trackedIds.has(v.videoId))
     console.log(`   New videos to add: ${newVideos.length}`)
 
-    // Add new videos to Notion
+    // Add new videos to Notion (with duplicate check before each insert)
     for (const video of newVideos) {
+      // Double-check this video doesn't already exist (prevents race conditions)
+      const existing = await findVideoByPlatformId(video.videoId, 'YouTube')
+      if (existing) {
+        console.log(`   ⏭️  Skipping (already exists): ${video.title.substring(0, 40)}...`)
+        continue
+      }
+
       const pageId = await createVideoEntry({
         title: video.title,
         platform: 'YouTube',
@@ -240,6 +247,7 @@ export async function syncTikTok() {
 
 /**
  * Check and record milestone stats
+ * Only records milestones if we're within the appropriate time window
  */
 export async function checkMilestones() {
   console.log('\n🎯 Checking milestones...')
@@ -260,8 +268,8 @@ export async function checkMilestones() {
     const postedDate = new Date(video.postedDate)
     const daysSincePost = Math.floor((now - postedDate) / (1000 * 60 * 60 * 24))
 
-    // Check D1 milestone (24+ hours)
-    if (daysSincePost >= 1 && !video.d1Recorded) {
+    // D1 milestone: only record if video is 1-6 days old
+    if (daysSincePost >= 1 && daysSincePost < 7 && !video.d1Recorded) {
       console.log(`   📊 Recording D1 for: ${video.title.substring(0, 40)}...`)
       const success = await saveMilestoneStats(video.id, 1, {
         views: video.viewsCurrent,
@@ -274,8 +282,8 @@ export async function checkMilestones() {
       if (success) results.d1.recorded++
     }
 
-    // Check D7 milestone (7+ days)
-    if (daysSincePost >= 7 && !video.d7Recorded && video.d1Recorded) {
+    // D7 milestone: only record if video is 7-29 days old
+    if (daysSincePost >= 7 && daysSincePost < 30 && !video.d7Recorded) {
       console.log(`   📊 Recording D7 for: ${video.title.substring(0, 40)}...`)
       const success = await saveMilestoneStats(video.id, 7, {
         views: video.viewsCurrent,
@@ -288,8 +296,8 @@ export async function checkMilestones() {
       if (success) results.d7.recorded++
     }
 
-    // Check D30 milestone (30+ days)
-    if (daysSincePost >= 30 && !video.d30Recorded && video.d7Recorded) {
+    // D30 milestone: only record if video is 30-89 days old
+    if (daysSincePost >= 30 && daysSincePost < 90 && !video.d30Recorded) {
       console.log(`   📊 Recording D30 for: ${video.title.substring(0, 40)}...`)
       const success = await saveMilestoneStats(video.id, 30, {
         views: video.viewsCurrent,
@@ -302,8 +310,8 @@ export async function checkMilestones() {
       if (success) results.d30.recorded++
     }
 
-    // Check D90 milestone (90+ days)
-    if (daysSincePost >= 90 && !video.d90Recorded && video.d30Recorded) {
+    // D90 milestone: only record if video is 90-180 days old (6 months window)
+    if (daysSincePost >= 90 && daysSincePost < 180 && !video.d90Recorded) {
       console.log(`   📊 Recording D90 for: ${video.title.substring(0, 40)}...`)
       const success = await saveMilestoneStats(video.id, 90, {
         views: video.viewsCurrent,
