@@ -1,7 +1,8 @@
 // kyndall-idea-engine/src/analytics/reporter.js
 // Weekly email reports sent to Kyndall
 
-import { getThisWeeksVideos, getTopPerformers, getPlatformSummary } from './notion-analytics.js'
+import { getThisWeeksVideos, getTopPerformers } from './notion-analytics.js'
+import { getPlatformSummary } from './collector.js'
 import { generateWeeklyInsights } from './analyzer.js'
 
 let resendApiKey = null
