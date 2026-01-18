@@ -62,17 +62,23 @@ async function getCredentials() {
 /**
  * Get valid access token, refreshing if needed
  */
-async function getValidAccessToken() {
+async function getValidAccessToken(forceRefresh = false) {
   const credentials = await getCredentials()
   if (!credentials) return null
 
   const now = Date.now()
   const accessExpiry = new Date(credentials.accessTokenExpiry).getTime()
   
-  // If token is still valid (with 5 min buffer), return it
-  if (now < accessExpiry - 5 * 60 * 1000) {
+  console.log(`   🔍 TikTok: Token expires at ${new Date(accessExpiry).toISOString()}`)
+  console.log(`   🔍 TikTok: Current time is ${new Date(now).toISOString()}`)
+  
+  // If token is still valid (with 5 min buffer) and not forcing refresh, return it
+  if (!forceRefresh && now < accessExpiry - 5 * 60 * 1000) {
+    console.log('   ✅ TikTok: Token still valid')
     return credentials.accessToken
   }
+
+  console.log('   ⚠️ TikTok: Token expired or force refresh requested')
 
   // Check if refresh token is still valid
   const refreshExpiry = new Date(credentials.refreshTokenExpiry).getTime()
@@ -90,7 +96,8 @@ async function getValidAccessToken() {
  */
 async function refreshAccessToken(refreshToken) {
   if (!clientKey || !clientSecret) {
-    throw new Error('TikTok client credentials not configured')
+    console.log('   ❌ TikTok: Missing TIKTOK_CLIENT_KEY or TIKTOK_CLIENT_SECRET')
+    return null
   }
 
   console.log('   🔄 TikTok: Refreshing access token...')
@@ -110,9 +117,11 @@ async function refreshAccessToken(refreshToken) {
     })
 
     const data = await response.json()
+    console.log('   🔍 TikTok refresh response:', JSON.stringify(data).substring(0, 200))
 
     if (data.error) {
-      throw new Error(data.error_description || data.error)
+      console.log(`   ❌ TikTok: Refresh failed - ${data.error}: ${data.error_description}`)
+      return null
     }
 
     // Update tokens in Sanity
@@ -130,9 +139,10 @@ async function refreshAccessToken(refreshToken) {
       .commit()
 
     console.log('   ✅ TikTok: Token refreshed and saved to Sanity')
+    cachedCredentials = null // Clear cache to force re-fetch
     return data.access_token
   } catch (error) {
-    console.error('Error refreshing TikTok token:', error.message)
+    console.error('   ❌ TikTok refresh error:', error.message)
     return null
   }
 }
@@ -140,7 +150,7 @@ async function refreshAccessToken(refreshToken) {
 /**
  * Make authenticated request to TikTok API
  */
-async function tiktokRequest(endpoint, options = {}) {
+async function tiktokRequest(endpoint, options = {}, isRetry = false) {
   const accessToken = await getValidAccessToken()
   if (!accessToken) {
     throw new Error('TikTok not authenticated')
@@ -159,9 +169,14 @@ async function tiktokRequest(endpoint, options = {}) {
 
   const data = await response.json()
 
-  if (data.error?.code === 'access_token_invalid' || response.status === 401) {
-    console.log('   🔄 TikTok: Token invalid, credentials may need refresh')
-    throw new Error('TikTok token invalid')
+  // If token is invalid and we haven't retried yet, force refresh and retry
+  if ((data.error?.code === 'access_token_invalid' || response.status === 401) && !isRetry) {
+    console.log('   🔄 TikTok: Token rejected by API, forcing refresh...')
+    const newToken = await getValidAccessToken(true) // Force refresh
+    if (newToken) {
+      return tiktokRequest(endpoint, options, true) // Retry with new token
+    }
+    throw new Error('TikTok token invalid and refresh failed')
   }
 
   return data
